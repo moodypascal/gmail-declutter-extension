@@ -9,6 +9,8 @@ export interface FetchOptions {
   batchSize?: number;
   maxPages?: number;
   signal?: AbortSignal;
+  batchDelay?: number; // Delay in ms between batches
+  pageDelay?: number; // Delay in ms between individual pages
 }
 
 /**
@@ -20,13 +22,6 @@ export class BrowserEmailService {
   static async fetchSendersFromBrowser(
     options: FetchOptions = {},
   ): Promise<Sender[]> {
-    const {
-      onProgress,
-      batchSize = 10, // Process pages sequentially in batches of 10, with a delay between batches
-      maxPages,
-      signal,
-    } = options;
-
     // Go to "All Mail" page
     const currentPage = window.location.href.split("#")[0];
     window.location.href = `${currentPage}#all`;
@@ -36,11 +31,28 @@ export class BrowserEmailService {
     const { messages: totalMessages, pages: totalPages } =
       this._getTotalMessagesPages();
 
-    const pagesToProcess = maxPages
-      ? Math.min(totalPages, maxPages)
+    const pagesToProcess = options.maxPages
+      ? Math.min(totalPages, options.maxPages)
       : totalPages;
+
+    // Adaptive settings based on inbox size for better performance
+    // For large inboxes (>50k emails or >500 pages), use smaller batches and longer delays
+    const isLargeInbox = totalMessages > 50000 || pagesToProcess > 500;
+    const isVeryLargeInbox = totalMessages > 100000 || pagesToProcess > 1000;
+
+    const {
+      onProgress,
+      batchSize = isVeryLargeInbox ? 3 : isLargeInbox ? 5 : 10,
+      batchDelay = isVeryLargeInbox ? 800 : isLargeInbox ? 500 : 200,
+      pageDelay = isVeryLargeInbox ? 100 : isLargeInbox ? 50 : 0,
+      signal,
+    } = options;
+
     console.log(
       `Total messages: ${totalMessages}, pages to process: ${pagesToProcess}`,
+    );
+    console.log(
+      `Using adaptive settings: batchSize=${batchSize}, batchDelay=${batchDelay}ms, pageDelay=${pageDelay}ms`,
     );
 
     // Use a Map for efficient sender aggregation
@@ -88,10 +100,17 @@ export class BrowserEmailService {
           };
           onProgress(progress);
         }
+
+        // Small delay between pages within a batch to yield to main thread
+        if (pageDelay > 0 && i < batchEnd) {
+          await new Promise((resolve) => setTimeout(resolve, pageDelay));
+        }
       }
 
-      // Small delay between batches to prevent browser freezing
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Delay between batches to prevent browser freezing and allow UI updates
+      if (batchStart + batchSize <= pagesToProcess) {
+        await new Promise((resolve) => setTimeout(resolve, batchDelay));
+      }
     }
 
     // Convert map to sorted array
