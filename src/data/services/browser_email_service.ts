@@ -36,15 +36,43 @@ export class BrowserEmailService {
       : totalPages;
 
     // Adaptive settings based on inbox size for better performance
-    // For large inboxes (>50k emails or >500 pages), use smaller batches and longer delays
-    const isLargeInbox = totalMessages > 50000 || pagesToProcess > 500;
-    const isVeryLargeInbox = totalMessages > 100000 || pagesToProcess > 1000;
+    // More aggressive tiers to ensure responsiveness even with 20k+ emails
+    let defaultBatchSize: number;
+    let defaultBatchDelay: number;
+    let defaultPageDelay: number;
+
+    if (totalMessages > 100000) {
+      // Very large inbox (>100k): Most conservative settings
+      defaultBatchSize = 2;
+      defaultBatchDelay = 1200;
+      defaultPageDelay = 150;
+    } else if (totalMessages > 50000) {
+      // Large inbox (50k-100k): Conservative settings
+      defaultBatchSize = 2;
+      defaultBatchDelay = 800;
+      defaultPageDelay = 100;
+    } else if (totalMessages > 20000) {
+      // Medium inbox (20k-50k): Moderate settings
+      defaultBatchSize = 3;
+      defaultBatchDelay = 500;
+      defaultPageDelay = 75;
+    } else if (totalMessages > 5000) {
+      // Small inbox (5k-20k): Light throttling
+      defaultBatchSize = 5;
+      defaultBatchDelay = 300;
+      defaultPageDelay = 30;
+    } else {
+      // Tiny inbox (<5k): Fast processing
+      defaultBatchSize = 10;
+      defaultBatchDelay = 200;
+      defaultPageDelay = 0;
+    }
 
     const {
       onProgress,
-      batchSize = isVeryLargeInbox ? 3 : isLargeInbox ? 5 : 10,
-      batchDelay = isVeryLargeInbox ? 800 : isLargeInbox ? 500 : 200,
-      pageDelay = isVeryLargeInbox ? 100 : isLargeInbox ? 50 : 0,
+      batchSize = defaultBatchSize,
+      batchDelay = defaultBatchDelay,
+      pageDelay = defaultPageDelay,
       signal,
     } = options;
 
